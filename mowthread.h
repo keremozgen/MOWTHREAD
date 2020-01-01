@@ -43,7 +43,10 @@ MTHREAD_WIN_ERR_CODE = 0; *MTHREAD_WIN_ERR_BUFFER = 0
 #define new DEBUG_NEW
 #endif
 #else
-
+#include <errno.h>
+#include <string.h>
+#include <pthread.h>
+#include <time.h>
 #endif
 
 
@@ -82,6 +85,10 @@ mowmutex mmutex_init();
 int mmutex_lock(mowmutex mutex);
 
 int mmutex_unlock(mowmutex mutex);
+
+int mmutex_lock_to(mowmutex mutex, uint32_t sec, uint32_t nsec);
+
+static inline void msleep_ms(uint32_t ms);
 
 //IMPLEMENT MOW FUNCTIONS HERE
 
@@ -124,6 +131,32 @@ int mmutex_destroy(mowmutex mutex) {
 		MOW_THREAD_STRERROR();
 		return MOWTHREADERR;
 	}return MOWTHREADOK;
+}
+int mmutex_lock_to(mowmutex mutex, uint32_t sec, uint32_t nsec) {
+	if (NULL == mutex) {
+		MOW_THREAD_ERROR("mmutex_lock mutex is NULL\n");
+		return MOWTHREADERR;
+	}
+	if (nsec != 0 && nsec < 1000000) nsec = 1000000;	//MIN 0 OR 1 MILLISECONDS
+	if (nsec > 999999999) {
+		nsec -= 999999999;
+		sec++;
+	}
+	DWORD total_milliseconds = (sec * 1000) + (nsec / 1000000);	//todo(kerem): SHOULD WE HANDLE OVERFLOW?
+	DWORD wfso = WaitForSingleObject((HANDLE)mutex, total_milliseconds);
+	if (0 == wfso) {
+		return MOWTHREADOK;
+	}
+	else if (WAIT_TIMEOUT == wfso) {
+		return MOWTHREADTIMEOUT;
+	}
+	else {
+		MOW_THREAD_STRERROR();
+		return MOWTHREADERR;
+	}
+}
+inline void msleep_ms(uint32_t ms) {
+	Sleep(ms);
 }
 #else
 mowmutex mmutex_init() {
@@ -173,6 +206,42 @@ int mmutex_destroy(mowmutex mutex) {
 	}
 	free(mutex);
 	return MOWTHREADOK;
+}
+int mmutex_lock_to(mowmutex mutex, uint32_t sec, uint32_t nsec) {
+	if (NULL == mutex) {
+		MOW_THREAD_ERROR("mmutex_lock mutex is NULL\n");
+		return MOWTHREADERR;
+	}
+	struct timespec ts;
+	clock_gettime(CLOCK_REALTIME, &ts);
+	ts.tv_sec = (time_t)sec + ts.tv_sec;
+	ts.tv_nsec = (long)nsec + ts.tv_nsec;
+	if (ts.tv_nsec > 999999999) {
+		ts.tv_nsec -= 999999999;
+		ts.tv_sec++;
+	}
+	int r = pthread_mutex_timedlock((pthread_mutex_t*)mutex, (const struct timespec*)&ts);
+	if (0 == r) {
+		return MOWTHREADOK;
+	}
+	else if (ETIMEDOUT == r) {
+		return MOWTHREADTIMEOUT;
+	}
+	else {
+		MOW_THREAD_STRERROR(r);
+		return MOWTHREADERR;
+	}
+}
+inline void msleep_ms(uint32_t ms) {
+	struct timespec tw, tr;
+	tw.tv_sec = ms / 1000;
+	tw.tv_nsec = (ms % 1000) * 1000000;
+	int k = nanosleep(&tw, &tr);
+	if (-1 == k) {
+		MOW_THREAD_STRERROR(errno);
+		printf("%d %ud sec %ud nsec\n",k, tr.tv_sec, tr.tv_nsec);
+		msleep_ms((tr.tv_sec * 1000) + (tr.tv_nsec / 1000000));
+	}
 }
 #endif
 

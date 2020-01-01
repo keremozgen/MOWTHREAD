@@ -1,6 +1,19 @@
 #include "mowthread.h"
 
 mowmutex m = 0;
+volatile static int start = 0;
+uint64_t testtolock(int k) {
+	//while (0 == start);
+	int kk = mmutex_lock_to(m, 0, 9999999);
+	if (MOWTHREADOK == kk) {
+		msleep_ms(2);
+		printf("%d got the lock\n", k);
+		mmutex_unlock(m);
+	}
+	else {
+		//printf("%d returned from lockto\n", kk);
+	}
+}
 
 uint64_t deneme(int k) {
 	mmutex_lock(m);
@@ -15,12 +28,13 @@ void main(){
 #endif
 	printf("Hello\n");
 	m = mmutex_init();
-	mowthread t = mthread(deneme, 1);
-	mowthread l = mthread(deneme, 2);
-	mowthread a = mthread(deneme, 3);
-	mowthread aa = mthread(deneme, 4);
-	mowthread aaa = mthread(deneme, 5);
-
+	
+	mowthread t = mthread(testtolock, 1);
+	mowthread l = mthread(testtolock, 2);
+	mowthread a = mthread(testtolock, 3);
+	mowthread aa = mthread(testtolock, 4);
+	mowthread aaa = mthread(testtolock, 5);
+	start = 1;
 	//mthread_detach(t);
 	mthread_join(t, 0);
 	mthread_join(l, 0);
