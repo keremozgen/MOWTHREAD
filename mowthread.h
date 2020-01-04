@@ -90,7 +90,43 @@ int mmutex_lock_to(mowmutex mutex, uint32_t sec, uint32_t nsec);
 
 static inline void msleep_ms(uint32_t ms);
 
+static inline uint64_t mprecise_time_of_day_ns(void);
+
 //IMPLEMENT MOW FUNCTIONS HERE
+
+#ifdef _WIN32
+static inline uint64_t mprecise_time_of_day_ns(void) {
+	FILETIME ft; ft.dwHighDateTime = 0; ft.dwLowDateTime = 0;
+	ULARGE_INTEGER uli;
+	GetSystemTimePreciseAsFileTime((LPFILETIME)&ft);
+	uli.LowPart = ft.dwLowDateTime;
+	uli.HighPart = ft.dwHighDateTime;
+	return (uint64_t)uli.QuadPart*100;
+}
+#else
+struct timespec MOW_THREAD_LINUX_CLOCK_RES_ = {0,0};
+static inline uint64_t mprecise_time_of_day_ns(void) {
+	if (0 == MOW_THREAD_LINUX_CLOCK_RES_.tv_nsec) {
+		if (-1 == clock_getres(CLOCK_MONOTONIC, &MOW_THREAD_LINUX_CLOCK_RES_)) {
+			MOW_THREAD_STRERROR(errno);
+			goto mprecise_time_of_day_ns_ERROR;
+		}
+	}
+	if (0 == MOW_THREAD_LINUX_CLOCK_RES_.tv_nsec || MOW_THREAD_LINUX_CLOCK_RES_.tv_sec != 0) {
+		printf("clock_get_time resolution is %dsec. %unsec. ", MOW_THREAD_LINUX_CLOCK_RES_.tv_sec, MOW_THREAD_LINUX_CLOCK_RES_.tv_nsec);
+		MOW_THREAD_ERROR("clock_get_time");
+		goto mprecise_time_of_day_ns_ERROR;
+	}
+	struct timespec t;
+	uint64_t ret = 0;
+	if (0 == clock_gettime(CLOCK_MONOTONIC, &t)) {
+		ret += ((uint64_t)(t.tv_sec) * 1000000000) + ((uint64_t)(t.tv_nsec));
+		return ret;
+	}
+	mprecise_time_of_day_ns_ERROR:
+	return 0;
+}
+#endif
 
 #ifdef _WIN32
 mowmutex mmutex_init() {

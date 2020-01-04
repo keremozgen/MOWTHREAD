@@ -27,6 +27,10 @@ void main(){
 	_CrtSetReportMode(_CRT_ERROR, _CRTDBG_MODE_DEBUG);
 #endif
 	printf("Hello\n");
+	uint64_t f = mprecise_time_of_day_ns();
+	msleep_ms(2000);
+	uint64_t s = mprecise_time_of_day_ns();
+	printf("%llu is the difference\n",(s-f));
 	m = mmutex_init();
 	
 	mowthread t = mthread(testtolock, 1);
